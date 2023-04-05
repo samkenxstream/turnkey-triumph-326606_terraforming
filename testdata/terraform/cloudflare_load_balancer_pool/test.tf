@@ -1,4 +1,5 @@
 resource "cloudflare_load_balancer_pool" "terraform_managed_resource" {
+  account_id         = "f037e56e89293a057740de681ac9abbe"
   check_regions      = ["WEU", "ENAM"]
   description        = "Primary data center - Provider XYZ"
   enabled            = false
@@ -9,11 +10,11 @@ resource "cloudflare_load_balancer_pool" "terraform_managed_resource" {
   origins {
     address = "0.0.0.0"
     enabled = true
-    name    = "app-server-1"
-    weight  = 1
     header {
       header = "Host"
       values = ["example.com"]
     }
+    name   = "app-server-1"
+    weight = 0.56
   }
 }

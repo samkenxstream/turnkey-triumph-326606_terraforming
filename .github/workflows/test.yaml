@@ -8,27 +8,20 @@ on:
 name: Test
 jobs:
   test:
-    strategy:
-      matrix:
-        go-version: [1.17]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
-      - name: install go
-        uses: actions/setup-go@v2
-        with:
-          go-version: ${{ matrix.go-version }}
       - name: checkout
-        uses: actions/checkout@v2
-      - uses: actions/cache@v2.1.3
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # needed for `only-new-issues` to compare diffs
+      - name: install go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+      - uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
-      - name: golint
-        if: matrix.os != 'windows-latest'
-        run: |
-          go get -v -u golang.org/x/lint/golint
-          $(go env GOPATH)/bin/golint -set_exit_status .
+          key: go1.20-${{ hashFiles('**/go.sum') }}
       - name: Vet
         run: go vet ./...
       - name: setup Terraform
@@ -40,7 +33,7 @@ jobs:
               required_providers {
                 cloudflare = {
                   source = "cloudflare/cloudflare"
-                  version = "~> 3"
+                  version = "~> 4"
                 }
               }
             }

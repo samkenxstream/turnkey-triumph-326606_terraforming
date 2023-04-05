@@ -3,12 +3,15 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	cloudflare "github.com/cloudflare/cloudflare-go"
 	"github.com/dnaeon/go-vcr/cassette"
 	"github.com/dnaeon/go-vcr/recorder"
+	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/spf13/viper"
 
 	"github.com/stretchr/testify/assert"
@@ -42,6 +45,15 @@ var (
 )
 
 func TestGenerate_writeAttrLine(t *testing.T) {
+	multilineListOfStrings := heredoc.Doc(`
+		a = ["b", "c", "d"]
+	`)
+	multilineBlock := heredoc.Doc(`
+		a = {
+		  c = "d"
+		  e = "f"
+		}
+	`)
 	tests := map[string]struct {
 		key   string
 		value interface{}
@@ -51,21 +63,22 @@ func TestGenerate_writeAttrLine(t *testing.T) {
 		"value is int":              {key: "a", value: 1, want: "a = 1\n"},
 		"value is float":            {key: "a", value: 1.0, want: "a = 1\n"},
 		"value is bool":             {key: "a", value: true, want: "a = true\n"},
-		"value is list of strings":  {key: "a", value: listOfString, want: "a = [ \"b\", \"c\", \"d\" ]\n"},
-		"value is block of strings": {key: "a", value: configBlockOfStrings, want: "a = {\nc = \"d\"\ne = \"f\"\n}\n"},
+		"value is list of strings":  {key: "a", value: listOfString, want: multilineListOfStrings},
+		"value is block of strings": {key: "a", value: configBlockOfStrings, want: multilineBlock},
 		"value is nil":              {key: "a", value: nil, want: ""},
 	}
 
 	for name, tc := range tests {
+		f := hclwrite.NewEmptyFile()
 		t.Run(name, func(t *testing.T) {
-			got := writeAttrLine(tc.key, tc.value, false)
-			assert.Equal(t, tc.want, got)
+			writeAttrLine(tc.key, tc.value, "", f.Body())
+			assert.Equal(t, tc.want, string(f.Bytes()))
 		})
 	}
 }
 
 func TestGenerate_ResourceNotSupported(t *testing.T) {
-	_, output, err := executeCommandC(rootCmd, "generate", "--resource-type", "notreal")
+	output, err := executeCommandC(rootCmd, "generate", "--resource-type", "notreal")
 
 	if assert.Nil(t, err) {
 		assert.Contains(t, output, "\"notreal\" is not yet supported for automatic generation")
@@ -87,10 +100,10 @@ func TestResourceGeneration(t *testing.T) {
 		"cloudflare access rule (account)":                   {identiferType: "account", resourceType: "cloudflare_access_rule", testdataFilename: "cloudflare_access_rule_account"},
 		"cloudflare access rule (zone)":                      {identiferType: "zone", resourceType: "cloudflare_access_rule", testdataFilename: "cloudflare_access_rule_zone"},
 		"cloudflare account member":                          {identiferType: "account", resourceType: "cloudflare_account_member", testdataFilename: "cloudflare_account_member"},
-		"cloudflare argo tunnel":                             {identiferType: "account", resourceType: "cloudflare_argo_tunnel", testdataFilename: "cloudflare_argo_tunnel"},
+		"cloudflare api shield":                              {identiferType: "zone", resourceType: "cloudflare_api_shield", testdataFilename: "cloudflare_api_shield"},
 		"cloudflare argo":                                    {identiferType: "zone", resourceType: "cloudflare_argo", testdataFilename: "cloudflare_argo"},
 		"cloudflare BYO IP prefix":                           {identiferType: "account", resourceType: "cloudflare_byo_ip_prefix", testdataFilename: "cloudflare_byo_ip_prefix"},
-		"cloudflare certificate pack":                        {identiferType: "zone", resourceType: "cloudflare_certificate_pack", testdataFilename: "cloudflare_certificate_pack"},
+		"cloudflare certificate pack":                        {identiferType: "zone", resourceType: "cloudflare_certificate_pack", testdataFilename: "cloudflare_certificate_pack_acm"},
 		"cloudflare custom hostname fallback origin":         {identiferType: "zone", resourceType: "cloudflare_custom_hostname_fallback_origin", testdataFilename: "cloudflare_custom_hostname_fallback_origin"},
 		"cloudflare custom hostname":                         {identiferType: "zone", resourceType: "cloudflare_custom_hostname", testdataFilename: "cloudflare_custom_hostname"},
 		"cloudflare custom pages (account)":                  {identiferType: "account", resourceType: "cloudflare_custom_pages", testdataFilename: "cloudflare_custom_pages_account"},
@@ -99,29 +112,36 @@ func TestResourceGeneration(t *testing.T) {
 		"cloudflare firewall rule":                           {identiferType: "zone", resourceType: "cloudflare_firewall_rule", testdataFilename: "cloudflare_firewall_rule"},
 		"cloudflare health check":                            {identiferType: "zone", resourceType: "cloudflare_healthcheck", testdataFilename: "cloudflare_healthcheck"},
 		"cloudflare load balancer monitor":                   {identiferType: "account", resourceType: "cloudflare_load_balancer_monitor", testdataFilename: "cloudflare_load_balancer_monitor"},
-		"cloudflare load balancer":                           {identiferType: "zone", resourceType: "cloudflare_load_balancer", testdataFilename: "cloudflare_load_balancer"},
 		"cloudflare load balancer pool":                      {identiferType: "account", resourceType: "cloudflare_load_balancer_pool", testdataFilename: "cloudflare_load_balancer_pool"},
-		"cloudflare logpush jobs":                            {identiferType: "zone", resourceType: "cloudflare_logpush_job", testdataFilename: "cloudflare_logpush_job"},
+		"cloudflare load balancer":                           {identiferType: "zone", resourceType: "cloudflare_load_balancer", testdataFilename: "cloudflare_load_balancer"},
 		"cloudflare logpush jobs with filter":                {identiferType: "zone", resourceType: "cloudflare_logpush_job", testdataFilename: "cloudflare_logpush_job_with_filter"},
+		"cloudflare logpush jobs":                            {identiferType: "zone", resourceType: "cloudflare_logpush_job", testdataFilename: "cloudflare_logpush_job"},
+		"cloudflare managed headers":                         {identiferType: "zone", resourceType: "cloudflare_managed_headers", testdataFilename: "cloudflare_managed_headers"},
 		"cloudflare origin CA certificate":                   {identiferType: "zone", resourceType: "cloudflare_origin_ca_certificate", testdataFilename: "cloudflare_origin_ca_certificate"},
 		"cloudflare page rule":                               {identiferType: "zone", resourceType: "cloudflare_page_rule", testdataFilename: "cloudflare_page_rule"},
 		"cloudflare rate limit":                              {identiferType: "zone", resourceType: "cloudflare_rate_limit", testdataFilename: "cloudflare_rate_limit"},
 		"cloudflare record CAA":                              {identiferType: "zone", resourceType: "cloudflare_record", testdataFilename: "cloudflare_record_caa"},
 		"cloudflare record PTR":                              {identiferType: "zone", resourceType: "cloudflare_record", testdataFilename: "cloudflare_record_ptr"},
-		"cloudflare record TXT SPF":                          {identiferType: "zone", resourceType: "cloudflare_record", testdataFilename: "cloudflare_record_txt_spf"},
 		"cloudflare record simple":                           {identiferType: "zone", resourceType: "cloudflare_record", testdataFilename: "cloudflare_record"},
 		"cloudflare record subdomain":                        {identiferType: "zone", resourceType: "cloudflare_record", testdataFilename: "cloudflare_record_subdomain"},
-		"cloudflare ruleset":                                 {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone"},
-		"cloudflare ruleset (no configuration)":              {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_no_configuration"},
-		"cloudflare ruleset (http_request_sanitize)":         {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_http_request_sanitize"},
-		"cloudflare ruleset (http_ratelimit)":                {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_http_ratelimit"},
+		"cloudflare record TXT SPF":                          {identiferType: "zone", resourceType: "cloudflare_record", testdataFilename: "cloudflare_record_txt_spf"},
 		"cloudflare ruleset (ddos_l7)":                       {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_ddos_l7"},
+		"cloudflare ruleset (http_log_custom_fields)":        {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_http_log_custom_fields"},
+		"cloudflare ruleset (http_ratelimit)":                {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_http_ratelimit"},
+		"cloudflare ruleset (http_request_cache_settings)":   {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_http_request_cache_settings"},
+		"cloudflare ruleset (http_request_firewall_custom)":  {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_http_request_firewall_custom"},
 		"cloudflare ruleset (http_request_firewall_managed)": {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_http_request_firewall_managed"},
 		"cloudflare ruleset (http_request_late_transform)":   {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_http_request_late_transform"},
-		"cloudflare ruleset (override remapping = enabled)":  {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_override_remapping_enabled"},
+		"cloudflare ruleset (http_request_sanitize)":         {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_http_request_sanitize"},
+		"cloudflare ruleset (no configuration)":              {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_no_configuration"},
 		"cloudflare ruleset (override remapping = disabled)": {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_override_remapping_disabled"},
+		"cloudflare ruleset (override remapping = enabled)":  {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_override_remapping_enabled"},
+		"cloudflare ruleset (rewrite to empty query string)": {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone_rewrite_to_empty_query_parameter"},
+		"cloudflare ruleset":                                 {identiferType: "zone", resourceType: "cloudflare_ruleset", testdataFilename: "cloudflare_ruleset_zone"},
 		"cloudflare spectrum application":                    {identiferType: "zone", resourceType: "cloudflare_spectrum_application", testdataFilename: "cloudflare_spectrum_application"},
-		"cloudflare WAF override":                            {identiferType: "zone", resourceType: "cloudflare_waf_override", testdataFilename: "cloudflare_waf_override"},
+		"cloudflare tunnel":                                  {identiferType: "account", resourceType: "cloudflare_tunnel", testdataFilename: "cloudflare_tunnel"},
+		"cloudflare url normalization settings":              {identiferType: "zone", resourceType: "cloudflare_url_normalization_settings", testdataFilename: "cloudflare_url_normalization_settings"},
+		"cloudflare user agent blocking rule":                {identiferType: "zone", resourceType: "cloudflare_user_agent_blocking_rule", testdataFilename: "cloudflare_user_agent_blocking_rule"},
 		"cloudflare waiting room":                            {identiferType: "zone", resourceType: "cloudflare_waiting_room", testdataFilename: "cloudflare_waiting_room"},
 		"cloudflare worker route":                            {identiferType: "zone", resourceType: "cloudflare_worker_route", testdataFilename: "cloudflare_worker_route"},
 		"cloudflare workers kv namespace":                    {identiferType: "account", resourceType: "cloudflare_workers_kv_namespace", testdataFilename: "cloudflare_workers_kv_namespace"},
@@ -138,23 +158,51 @@ func TestResourceGeneration(t *testing.T) {
 	}
 
 	for name, tc := range tests {
-
 		t.Run(name, func(t *testing.T) {
 			// Reset the environment variables used in test to ensure we don't
 			// have both present at once.
 			viper.Set("zone", "")
 			viper.Set("account", "")
 
-			r, err := recorder.New("../../../../testdata/cloudflare/" + tc.testdataFilename)
+			var r *recorder.Recorder
+			var err error
+			if os.Getenv("OVERWRITE_VCR_CASSETTES") == "true" {
+				r, err = recorder.NewAsMode("../../../../testdata/cloudflare/"+tc.testdataFilename, recorder.ModeRecording, http.DefaultTransport)
+			} else {
+				r, err = recorder.New("../../../../testdata/cloudflare/" + tc.testdataFilename)
+			}
+
 			if err != nil {
 				log.Fatal(err)
 			}
-			defer r.Stop()
+			defer func() {
+				err := r.Stop()
+				if err != nil {
+					log.Fatal(err)
+				}
+			}()
 
 			r.AddFilter(func(i *cassette.Interaction) error {
+				// Sensitive HTTP headers
 				delete(i.Request.Headers, "X-Auth-Email")
 				delete(i.Request.Headers, "X-Auth-Key")
 				delete(i.Request.Headers, "Authorization")
+
+				// HTTP request headers that we don't need to assert against
+				delete(i.Request.Headers, "User-Agent")
+
+				// HTTP response headers that we don't need to assert against
+				delete(i.Response.Headers, "Cf-Cache-Status")
+				delete(i.Response.Headers, "Cf-Ray")
+				delete(i.Response.Headers, "Date")
+				delete(i.Response.Headers, "Server")
+				delete(i.Response.Headers, "Set-Cookie")
+				delete(i.Response.Headers, "X-Envoy-Upstream-Service-Time")
+
+				if os.Getenv("CLOUDFLARE_DOMAIN") != "" {
+					i.Response.Body = strings.ReplaceAll(i.Response.Body, os.Getenv("CLOUDFLARE_DOMAIN"), "example.com")
+				}
+
 				return nil
 			})
 
@@ -168,8 +216,7 @@ func TestResourceGeneration(t *testing.T) {
 					},
 				), cloudflare.UsingAccount(cloudflareTestAccountID))
 
-				_, output, _ = executeCommandC(rootCmd, "generate", "--resource-type", tc.resourceType, "--account", cloudflareTestAccountID)
-
+				output, _ = executeCommandC(rootCmd, "generate", "--resource-type", tc.resourceType, "--account", cloudflareTestAccountID)
 			} else {
 				viper.Set("zone", cloudflareTestZoneID)
 				api, _ = cloudflare.New(viper.GetString("key"), viper.GetString("email"), cloudflare.HTTPClient(
@@ -178,8 +225,7 @@ func TestResourceGeneration(t *testing.T) {
 					},
 				))
 
-				_, output, _ = executeCommandC(rootCmd, "generate", "--resource-type", tc.resourceType, "--zone", cloudflareTestZoneID)
-
+				output, _ = executeCommandC(rootCmd, "generate", "--resource-type", tc.resourceType, "--zone", cloudflareTestZoneID)
 			}
 
 			expected := testDataFile(tc.testdataFilename)

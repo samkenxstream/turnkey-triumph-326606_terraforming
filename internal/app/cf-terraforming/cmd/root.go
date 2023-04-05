@@ -9,13 +9,13 @@ import (
 )
 
 var log = logrus.New()
-var cfgFile, zoneID, hostname, apiEmail, apiKey, apiToken, accountID, terraformInstallPath string
+var cfgFile, zoneID, hostname, apiEmail, apiKey, apiToken, accountID, terraformInstallPath, terraformBinaryPath string
 var verbose bool
 var api *cloudflare.API
 var terraformImportCmdPrefix = "terraform import"
 var terraformResourceNamePrefix = "terraform_managed_resource"
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "cf-terraforming",
 	Short: "Bootstrapping Terraform from existing Cloudflare account",
@@ -49,40 +49,75 @@ func init() {
 
 	// Zone selection
 	rootCmd.PersistentFlags().StringVarP(&zoneID, "zone", "z", "", "Limit the export to a single zone ID")
-	viper.BindPFlag("zone", rootCmd.PersistentFlags().Lookup("zone"))
-	viper.BindEnv("zone", "CLOUDFLARE_ZONE_ID")
+	if err = viper.BindPFlag("zone", rootCmd.PersistentFlags().Lookup("zone")); err != nil {
+		log.Fatal(err)
+	}
+	if err = viper.BindEnv("zone", "CLOUDFLARE_ZONE_ID"); err != nil {
+		log.Fatal(err)
+	}
 
 	// Account
 	rootCmd.PersistentFlags().StringVarP(&accountID, "account", "a", "", "Use specific account ID for commands")
-	viper.BindPFlag("account", rootCmd.PersistentFlags().Lookup("account"))
-	viper.BindEnv("account", "CLOUDFLARE_ACCOUNT_ID")
+	if err = viper.BindPFlag("account", rootCmd.PersistentFlags().Lookup("account")); err != nil {
+		log.Fatal(err)
+	}
+	if err = viper.BindEnv("account", "CLOUDFLARE_ACCOUNT_ID"); err != nil {
+		log.Fatal(err)
+	}
 
 	// API credentials
 	rootCmd.PersistentFlags().StringVarP(&apiEmail, "email", "e", "", "API Email address associated with your account")
-	viper.BindPFlag("email", rootCmd.PersistentFlags().Lookup("email"))
-	viper.BindEnv("email", "CLOUDFLARE_EMAIL")
+	if err = viper.BindPFlag("email", rootCmd.PersistentFlags().Lookup("email")); err != nil {
+		log.Fatal(err)
+	}
+	if err = viper.BindEnv("email", "CLOUDFLARE_EMAIL"); err != nil {
+		log.Fatal(err)
+	}
 
 	rootCmd.PersistentFlags().StringVarP(&apiKey, "key", "k", "", "API Key generated on the 'My Profile' page. See: https://dash.cloudflare.com/profile")
-	viper.BindPFlag("key", rootCmd.PersistentFlags().Lookup("key"))
-	viper.BindEnv("key", "CLOUDFLARE_API_KEY")
+	if err = viper.BindPFlag("key", rootCmd.PersistentFlags().Lookup("key")); err != nil {
+		log.Fatal(err)
+	}
+	if err = viper.BindEnv("key", "CLOUDFLARE_API_KEY"); err != nil {
+		log.Fatal(err)
+	}
 
 	rootCmd.PersistentFlags().StringVarP(&apiToken, "token", "t", "", "API Token")
-	viper.BindPFlag("token", rootCmd.PersistentFlags().Lookup("token"))
-	viper.BindEnv("token", "CLOUDFLARE_API_TOKEN")
+	if err = viper.BindPFlag("token", rootCmd.PersistentFlags().Lookup("token")); err != nil {
+		log.Fatal(err)
+	}
+	if err = viper.BindEnv("token", "CLOUDFLARE_API_TOKEN"); err != nil {
+		log.Fatal(err)
+	}
 
 	rootCmd.PersistentFlags().StringVarP(&hostname, "hostname", "", "", "Hostname to use to query the API")
-	viper.BindPFlag("hostname", rootCmd.PersistentFlags().Lookup("hostname"))
-	viper.BindEnv("hostname", "CLOUDFLARE_API_HOSTNAME")
+	if err = viper.BindPFlag("hostname", rootCmd.PersistentFlags().Lookup("hostname")); err != nil {
+		log.Fatal(err)
+	}
+	if err = viper.BindEnv("hostname", "CLOUDFLARE_API_HOSTNAME"); err != nil {
+		log.Fatal(err)
+	}
 
 	// Debug logging mode
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Specify verbose output (same as setting log level to debug)")
 
 	rootCmd.PersistentFlags().StringVar(&resourceType, "resource-type", "", "Which resource you wish to generate")
 
-	rootCmd.PersistentFlags().StringVar(&terraformInstallPath, "terraform-install-path", ".", "Path to the Terraform installation")
+	rootCmd.PersistentFlags().StringVar(&terraformInstallPath, "terraform-install-path", ".", "Path to an initialized Terraform working directory")
 
-	viper.BindPFlag("terraform-install-path", rootCmd.PersistentFlags().Lookup("terraform-install-path"))
-	viper.BindEnv("terraform-install-path", "CLOUDFLARE_TERRAFORM_INSTALL_PATH")
+	if err = viper.BindPFlag("terraform-install-path", rootCmd.PersistentFlags().Lookup("terraform-install-path")); err != nil {
+		log.Fatal(err)
+	}
+
+	rootCmd.PersistentFlags().StringVar(&terraformBinaryPath, "terraform-binary-path", "", "Path to an existing Terraform binary (otherwise, one will be downloaded)")
+
+	if err = viper.BindPFlag("terraform-binary-path", rootCmd.PersistentFlags().Lookup("terraform-binary-path")); err != nil {
+		log.Fatal(err)
+	}
+
+	if err = viper.BindEnv("terraform-install-path", "CLOUDFLARE_TERRAFORM_INSTALL_PATH"); err != nil {
+		log.Fatal(err)
+	}
 }
 
 // initConfig reads in config file and ENV variables if set.

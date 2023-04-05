@@ -16,30 +16,31 @@ import (
 // resourceImportStringFormats contains a mapping of the resource type to the
 // composite ID that is compatible with performing an import.
 var resourceImportStringFormats = map[string]string{
-	"cloudflare_access_rule":           ":identifer_type/:identifer_value/:id",
+	"cloudflare_access_rule":           ":identifier_type/:identifier_value/:id",
 	"cloudflare_account_member":        ":account_id/:id",
 	"cloudflare_argo":                  ":zone_id/argo",
-	"cloudflare_argo_tunnel":           ":account_id/:id",
 	"cloudflare_byo_ip_prefix":         ":id",
 	"cloudflare_certificate_pack":      ":zone_id/:id",
-	"cloudflare_custom_pages":          ":identifer_type/:identifer_value/:id",
+	"cloudflare_custom_hostname":       ":zone_id/:id",
+	"cloudflare_custom_pages":          ":identifier_type/:identifier_value/:id",
+	"cloudflare_custom_ssl":            ":zone_id/:id",
 	"cloudflare_filter":                ":zone_id/:id",
 	"cloudflare_firewall_rule":         ":zone_id/:id",
 	"cloudflare_healthcheck":           ":zone_id/:id",
-	"cloudflare_custom_hostname":       ":zone_id/:id",
-	"cloudflare_custom_ssl":            ":zone_id/:id",
 	"cloudflare_ip_list":               ":account_id/:id",
 	"cloudflare_origin_ca_certificate": ":id",
 	"cloudflare_page_rule":             ":zone_id/:id",
 	"cloudflare_rate_limit":            ":zone_id/:id",
 	"cloudflare_record":                ":zone_id/:id",
+	"cloudflare_ruleset":               ":identifier_type/:identifier_value/:id",
 	"cloudflare_spectrum_application":  ":zone_id/:id",
+	"cloudflare_tunnel":                ":account_id/:id",
 	"cloudflare_waf_override":          ":zone_id/:id",
 	"cloudflare_waiting_room":          ":zone_id/:id",
 	"cloudflare_worker_route":          ":zone_id/:id",
 	"cloudflare_workers_kv_namespace":  ":id",
-	"cloudflare_zone":                  ":id",
 	"cloudflare_zone_lockdown":         ":zone_id/:id",
+	"cloudflare_zone":                  ":id",
 }
 
 func init() {
@@ -65,7 +66,10 @@ func runImport() func(cmd *cobra.Command, args []string) {
 				}
 
 				m, _ := json.Marshal(jsonPayload.Result)
-				json.Unmarshal(m, &jsonStructData)
+				err = json.Unmarshal(m, &jsonStructData)
+				if err != nil {
+					log.Fatal(err)
+				}
 			} else {
 				jsonPayload, err := api.ListZoneAccessRules(context.Background(), zoneID, cloudflare.AccessRule{}, 1)
 				if err != nil {
@@ -73,7 +77,10 @@ func runImport() func(cmd *cobra.Command, args []string) {
 				}
 
 				m, _ := json.Marshal(jsonPayload.Result)
-				json.Unmarshal(m, &jsonStructData)
+				err = json.Unmarshal(m, &jsonStructData)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
 		case "cloudflare_account_member":
 			jsonPayload, _, err := api.AccountMembers(context.Background(), accountID, cloudflare.PaginationOptions{})
@@ -81,35 +88,49 @@ func runImport() func(cmd *cobra.Command, args []string) {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_argo":
 			jsonPayload := []cloudflare.ArgoFeatureSetting{{
 				ID: fmt.Sprintf("%x", md5.Sum([]byte(time.Now().String()))),
 			}}
 
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
-		case "cloudflare_argo_tunnel":
-			jsonPayload, err := api.ArgoTunnels(context.Background(), accountID)
+			err := json.Unmarshal(m, &jsonStructData)
 			if err != nil {
 				log.Fatal(err)
 			}
-			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
 		case "cloudflare_byo_ip_prefix":
 			jsonPayload, err := api.ListPrefixes(context.Background(), accountID)
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_certificate_pack":
 			jsonPayload, err := api.ListCertificatePacks(context.Background(), zoneID)
 			if err != nil {
 				log.Fatal(err)
 			}
+
+			var customerManagedCertificates []cloudflare.CertificatePack
+			for _, r := range jsonPayload {
+				if r.Type != "universal" {
+					customerManagedCertificates = append(customerManagedCertificates, r)
+				}
+			}
+			jsonPayload = customerManagedCertificates
+
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_custom_pages":
 			if accountID != "" {
 				jsonPayload, err := api.CustomPages(context.Background(), &cloudflare.CustomPageOptions{AccountID: accountID})
@@ -118,8 +139,10 @@ func runImport() func(cmd *cobra.Command, args []string) {
 				}
 
 				m, _ := json.Marshal(jsonPayload)
-				json.Unmarshal(m, &jsonStructData)
-
+				err = json.Unmarshal(m, &jsonStructData)
+				if err != nil {
+					log.Fatal(err)
+				}
 			} else {
 				jsonPayload, err := api.CustomPages(context.Background(), &cloudflare.CustomPageOptions{ZoneID: zoneID})
 				if err != nil {
@@ -127,36 +150,51 @@ func runImport() func(cmd *cobra.Command, args []string) {
 				}
 
 				m, _ := json.Marshal(jsonPayload)
-				json.Unmarshal(m, &jsonStructData)
+				err = json.Unmarshal(m, &jsonStructData)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
 		case "cloudflare_filter":
-			jsonPayload, err := api.Filters(context.Background(), zoneID, cloudflare.PaginationOptions{})
+			jsonPayload, _, err := api.Filters(context.Background(), cloudflare.ZoneIdentifier(zoneID), cloudflare.FilterListParams{})
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_firewall_rule":
-			jsonPayload, err := api.FirewallRules(context.Background(), zoneID, cloudflare.PaginationOptions{})
+			jsonPayload, _, err := api.FirewallRules(context.Background(), cloudflare.ZoneIdentifier(zoneID), cloudflare.FirewallRuleListParams{})
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_healthcheck":
 			jsonPayload, err := api.Healthchecks(context.Background(), zoneID)
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_custom_hostname":
 			jsonPayload, _, err := api.CustomHostnames(context.Background(), zoneID, 1, cloudflare.CustomHostname{})
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_custom_ssl":
 			jsonPayload, err := api.ListSSL(context.Background(), zoneID)
 			if err != nil {
@@ -164,29 +202,41 @@ func runImport() func(cmd *cobra.Command, args []string) {
 			}
 
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_ip_list":
 			jsonPayload, err := api.ListIPLists(context.Background(), accountID)
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_logpush_job":
 			jsonPayload, err := api.LogpushJobs(context.Background(), zoneID)
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_origin_ca_certificate":
-			jsonPayload, err := api.OriginCertificates(context.Background(), cloudflare.OriginCACertificateListOptions{ZoneID: zoneID})
+			jsonPayload, err := api.ListOriginCACertificates(context.Background(), cloudflare.ListOriginCertificatesParams{ZoneID: zoneID})
 			if err != nil {
 				log.Fatal(err)
 			}
 
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_page_rule":
 			jsonPayload, err := api.ListPageRules(context.Background(), zoneID)
 			if err != nil {
@@ -194,22 +244,57 @@ func runImport() func(cmd *cobra.Command, args []string) {
 			}
 
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_rate_limit":
-			jsonPayload, _, err := api.ListRateLimits(context.Background(), zoneID, cloudflare.PaginationOptions{})
+			jsonPayload, err := api.ListAllRateLimits(context.Background(), zoneID)
 			if err != nil {
 				log.Fatal(err)
 			}
 
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_record":
-			jsonPayload, err := api.DNSRecords(context.Background(), zoneID, cloudflare.DNSRecord{})
+			jsonPayload, _, err := api.ListDNSRecords(context.Background(), cloudflare.ZoneIdentifier(zoneID), cloudflare.ListDNSRecordsParams{})
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
+		case "cloudflare_ruleset":
+			var err error
+			var jsonPayload []cloudflare.Ruleset
+			if accountID != "" {
+				jsonPayload, err = api.ListAccountRulesets(context.Background(), accountID)
+			} else {
+				jsonPayload, err = api.ListZoneRulesets(context.Background(), zoneID)
+			}
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// Customers can read-only Managed Rulesets, so we don't want to
+			// have them try to import something they can't manage with terraform
+			var nonManagedRules []cloudflare.Ruleset
+			for _, r := range jsonPayload {
+				if r.Kind != string(cloudflare.RulesetKindManaged) {
+					nonManagedRules = append(nonManagedRules, r)
+				}
+			}
+
+			m, _ := json.Marshal(nonManagedRules)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_spectrum_application":
 			jsonPayload, err := api.SpectrumApplications(context.Background(), zoneID)
 			if err != nil {
@@ -217,7 +302,32 @@ func runImport() func(cmd *cobra.Command, args []string) {
 			}
 
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
+		case "cloudflare_tunnel":
+			log.Debug("only requesting the first 1000 active Cloudflare Tunnels due to the service not providing correct pagination responses")
+			jsonPayload, _, err := api.ListTunnels(
+				context.Background(),
+				cloudflare.AccountIdentifier(accountID),
+				cloudflare.TunnelListParams{
+					IsDeleted: cloudflare.BoolPtr(false),
+					ResultInfo: cloudflare.ResultInfo{
+						PerPage: 1000,
+						Page:    1,
+					},
+				})
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			m, _ := json.Marshal(jsonPayload)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_waf_override":
 			jsonPayload, err := api.ListWAFOverrides(context.Background(), zoneID)
 			if err != nil {
@@ -225,52 +335,73 @@ func runImport() func(cmd *cobra.Command, args []string) {
 			}
 
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_waf_package":
 			jsonPayload, err := api.ListWAFPackages(context.Background(), zoneID)
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_waiting_room":
 			jsonPayload, err := api.ListWaitingRooms(context.Background(), zoneID)
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_workers_kv_namespace":
-			jsonPayload, err := api.ListWorkersKVNamespaces(context.Background())
+			jsonPayload, _, err := api.ListWorkersKVNamespaces(context.Background(), cloudflare.AccountIdentifier(accountID), cloudflare.ListWorkersKVNamespacesParams{})
 			if err != nil {
 				log.Fatal(err)
 			}
 
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_worker_route":
-			jsonPayload, err := api.ListWorkerRoutes(context.Background(), zoneID)
+			jsonPayload, err := api.ListWorkerRoutes(context.Background(), cloudflare.ZoneIdentifier(zoneID), cloudflare.ListWorkerRoutesParams{})
 			if err != nil {
 				log.Fatal(err)
 			}
 
 			m, _ := json.Marshal(jsonPayload.Routes)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_zone":
 			jsonPayload, err := api.ListZones(context.Background())
 			if err != nil {
 				log.Fatal(err)
 			}
 			m, _ := json.Marshal(jsonPayload)
-			json.Unmarshal(m, &jsonStructData)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		case "cloudflare_zone_lockdown":
-			jsonPayload, err := api.ListZoneLockdowns(context.Background(), zoneID, 1)
+			jsonPayload, _, err := api.ListZoneLockdowns(context.Background(), cloudflare.ZoneIdentifier(zoneID), cloudflare.LockdownListParams{})
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			m, _ := json.Marshal(jsonPayload.Result)
-			json.Unmarshal(m, &jsonStructData)
+			m, _ := json.Marshal(jsonPayload)
+			err = json.Unmarshal(m, &jsonStructData)
+			if err != nil {
+				log.Fatal(err)
+			}
 		default:
 			fmt.Fprintf(cmd.OutOrStdout(), "%q is not yet supported for state import", resourceType)
 			return
@@ -304,8 +435,8 @@ func buildCompositeID(resourceType, resourceID string) string {
 	s := ""
 	s += fmt.Sprintf("%s %s.%s_%s %s", terraformImportCmdPrefix, resourceType, terraformResourceNamePrefix, resourceID, resourceImportStringFormats[resourceType])
 	replacer := strings.NewReplacer(
-		":identifer_type", identiferType,
-		":identifer_value", identiferValue,
+		":identifier_type", identiferType,
+		":identifier_value", identiferValue,
 		":zone_id", zoneID,
 		":account_id", accountID,
 		":id", resourceID,
